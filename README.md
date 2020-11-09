@@ -11,11 +11,18 @@ A POC to create an internal load balancer using keepalived and nginx.
 
 * The load balancing functionality can be done either with keepalived or nginx.
 
-
 ## VIP HA config with keepalived
 
+* The configuration file of keepalived is `/etc/keepalived/keepalived.conf`.
+* The following content is the configuration of the first node. A similar file must be configured on the other nodes.
+* On the other nodes, the `state` and `priority` must be changed.
+* In the following configuration:
+    * There are 2 VIP (this is to spread the load on the both lb)
+    * VIP 10.132.69.250 is the `MASTER` with the highest priority, so it will run  on this node by default.
+    * VIP 10.132.69.251 is a `BACKUP` with not the highest priority, so it will not run on this node unless if the preferred node is not available.
+    * The `vrrp_script` part define a track script that will be called every 2 seconds to ensure the monitored service is active.
+
 ```
-[root@PF9SODECOFER114 ~]# cat /etc/keepalived/keepalived.conf
 vrrp_script chk_myscript {
   script       "/usr/local/bin/check.sh"
   interval 1   # check every 2 seconds
@@ -24,10 +31,10 @@ vrrp_script chk_myscript {
 }
 
 vrrp_instance VI_1 {
-        state BACKUP
+        state MASTER
         interface ens192
         virtual_router_id 51
-        priority 254
+        priority 255
         advert_int 1
         authentication {
               auth_type PASS
@@ -42,10 +49,10 @@ vrrp_instance VI_1 {
 }
 
 vrrp_instance VI_2 {
-        state MASTER
+        state BACKUP
         interface ens192
         virtual_router_id 52
-        priority 255
+        priority 254
         advert_int 1
         authentication {
               auth_type PASS
@@ -63,9 +70,9 @@ vrrp_instance VI_2 {
 
 ## Check script to monitor nginx status
 
-This check script ensure that nginx is available. It it is not the case, then the vip is moved to another node.
+This is a simple example, the check script ensure that nginx container is available. It it is not the case, then the vip is moved to another node.
 ```
-[root@PF9SODECOFER114 ~]# cat /usr/local/bin/check.sh
+$ cat /usr/local/bin/check.sh
 #!/bin/bash
 
 set -euo pipefail
@@ -74,6 +81,21 @@ IFS=$'\n\t'
 docker ps -f name=nginx | grep "nginx"
 ```
 
+As mentioned above, to spread the load to 2 load balancers, a simple round robin dns can be configured.
+
+Each call to the internal-lb will be sent
+
+First call to:
+FQDN: internal-lb --> 10.132.69.250
+                  --> 10.132.69.251
+
+Next call to:
+FQDN: internal-lb --> 10.132.69.251
+                  --> 10.132.69.250
+
+Next call to:
+FQDN: internal-lb --> 10.132.69.250
+                  --> 10.132.69.251
 
 ## Active/active configuration with a round robin dns
 
