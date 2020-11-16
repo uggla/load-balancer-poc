@@ -85,7 +85,7 @@ docker ps -f name=nginx | grep "nginx"
 
 As mentioned above, to spread the load to 2 load balancers, a simple round robin dns can be configured.
 
-Each call to the internal-lb will be sent
+Each call to the internal-lb will be sent alternatively to one address then the other.
 
 First call to:
 FQDN: internal-lb --> 10.132.69.250
@@ -126,7 +126,7 @@ virtual_server 10.132.69.250 15673 {
 }
 ```
 Keepalived can be used as a load balancer.
-One of the benefits is the direct routing mode. In this mode the load balanced server will answer directly to the client from a network perspective.
+One of the benefits is the direct routing mode. In this mode the load balanced servers will answer directly to the client from a network perspective.
 It means that the traffic going back to the client will not pass through the load balancer. It is better for performance, but more complex to implement.
 
 ```
@@ -292,7 +292,7 @@ http {
 }
 ```
 
-Nginx can also be used as an http/https load balancer providing nice feature.
+Nginx can also be used as an http/https load balancer providing nice features.
 The above example allows to load balance traffic on the host name (rabbit-int.local) and allows to redirect traffic to different URL locations (/toto).
 
 
@@ -376,7 +376,7 @@ output {
 
 ```
 
-There is a side effect on our ELK stack. The source ip in the log was not anymore the ones from the container but the load balancer one.
+There is a side effect on our ELK stack. The source ip in the log was not anymore the one from the container but the load balancer one.
 
 This issue can be fixed by adding the following  2 rules to logstash.
 ```
@@ -397,9 +397,9 @@ The load balancer was stressed using apache `ab` tool. It sends concurrent reque
 This test is probably not fully relevant but it gives an idea of the reliability and performance achieved.
 
 The following charts shows request response time vs concurrent request.
-Note 1: there was no error on the request.
-Note 2: most of the response time is probably due to the web servers handling the requests.
+* Note 1: there was no error on the request.
+* Note 2: most of the response time is probably due to the web servers handling the requests.
+
+As a result handling ~300 concurrent requests looks fine and response time is under 50ms for each request.
 
 ![response time](response_time.png)
-
-
