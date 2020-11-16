@@ -1,2 +1,3 @@
 *.png binary
-*.draio binary
+*.drawio binary
+*.xlsx binary
