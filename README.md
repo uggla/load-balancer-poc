@@ -81,6 +81,8 @@ IFS=$'\n\t'
 docker ps -f name=nginx | grep "nginx"
 ```
 
+## Active/active configuration with a round robin dns
+
 As mentioned above, to spread the load to 2 load balancers, a simple round robin dns can be configured.
 
 Each call to the internal-lb will be sent
@@ -97,13 +99,11 @@ Next call to:
 FQDN: internal-lb --> 10.132.69.250
                   --> 10.132.69.251
 
-## Active/active configuration with a round robin dns
-
 
 
 
 ## Load balancing with keepalived (not the solution chosen)
-i
+
 ```
 virtual_server 10.132.69.250 15673 {
     delay_loop 20
@@ -125,6 +125,27 @@ virtual_server 10.132.69.250 15673 {
     }
 }
 ```
+Keepalived can be used as a load balancer.
+One of the benefits is the direct routing mode. In this mode the load balanced server will answer directly to the client from a network perspective.
+It means that the traffic going back to the client will not pass through the load balancer. It is better for performance, but more complex to implement.
+
+```
+ip l add dummy0 type dummy
+ip a add 10.132.69.250 dev dummy0
+ip l set  dummy0 up
+ip r add 10.132.169.250/32 dev dummy0
+```
+To use this mode you need to set in interface with the VIP address on the servers.
+* the dummy interface type is suitable for this usage as it does not answer to arp requests that will confuse the switches. (duplicate ip vip and dummy ones on servers)
+* a static route must be defined on the servers to answer using the correct (vip) address to the clients.
+
+```
+# minimum time interval for refreshing gratuitous ARPs while MASTER
+vrrp_garp_master_refresh 60  # secs, default 0 (no refreshing)
+```
+https://serverfault.com/questions/821809/keepalived-send-gratuitous-arp-periodically
+
+Not fully tested, but sometimes servers could lost the VIP arp assigned address. To avoid this there is the `vrrp_garp_master_refresh` parameter that will periodically send the gratuitous ARP packet packet making sure all systems will know the correct ARP address of the VIP.
 
 
 ## Load balancing with nginx
@@ -230,9 +251,16 @@ stream {
   }
 }
 
+```
 
+Load balancing rules is pretty straight forward using nginx. In that case the load balancing is applied on network stream (tcp or udp).
 
 ```
+su docker -s /bin/bash -c "docker run --name nginx -v $PWD/nginx/nginx.conf:/etc/nginx/nginx.conf:ro --net host -d nginx"
+```
+As we use nginx in docker.
+* Using the `--net host` will avoid to define all listening ports.
+* As we are not using the docker-proxy here, performances will be better.
 
 ## Reverse proxy configuration
 
@@ -246,7 +274,7 @@ http {
 
     server { # simple reverse-proxy
         listen       15672;
-        server_name  decofer-rabbit-int.applispfref.sipfref.local;
+        server_name  rabbit-int.local;
         #access_log   logs/domain2.access.log  main;
 
 
@@ -264,6 +292,8 @@ http {
 }
 ```
 
+Nginx can also be used as an http/https load balancer providing nice feature.
+The above example allows to load balance traffic on the host name (rabbit-int.local) and allows to redirect traffic to different URL locations (/toto).
 
 
 ## Side effect on ELK
@@ -345,5 +375,31 @@ output {
 }
 
 ```
+
+There is a side effect on our ELK stack. The source ip in the log was not anymore the ones from the container but the load balancer one.
+
+This issue can be fixed by adding the following  2 rules to logstash.
+```
+    mutate {
+        replace => { "source_host" => "%{host}.applispfref.sipfref.local" }
+    }
+    dns {
+        resolve => [ "source_host" ]
+        action => "replace"
+    }
+```
+Basically, it will rewrite the `source_host` field by doing a lookup of the host fqdn that sends the log.
+
+
+## Performances
+
+The load balancer was stressed using apache `ab` tool. It sends concurrent request to the rabbitmq ui.
+This test is probably not fully relevant but it gives an idea of the reliability and performance achieved.
+
+The following charts shows request response time vs concurrent request.
+Note 1: there was no error on the request.
+Note 2: most of the response time is probably due to the web servers handling the requests.
+
+![response time](response_time.png)
 
 
